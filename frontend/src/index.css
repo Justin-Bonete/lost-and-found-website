@@ -1,0 +1,231 @@
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// In-memory data storage
+const users = [];
+const items = [];
+
+// ============ HEALTH CHECK ============
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Lost & Found API is running!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ============ AUTH ROUTES ============
+app.post('/api/auth/register', (req, res) => {
+  try {
+    const { email, username, password, fullName, phoneNumber } = req.body;
+    
+    console.log('Register attempt:', { email, username, fullName });
+    
+    // Check if user exists
+    const existingUser = users.find(u => u.email === email);
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    
+    // Create new user
+    const newUser = {
+      id: users.length + 1,
+      email,
+      username,
+      fullName,
+      phoneNumber: phoneNumber || '',
+      role: 'USER',
+      createdAt: new Date()
+    };
+    
+    users.push({ ...newUser, password });
+    
+    // Return success (without password)
+    const { password: _, ...userWithoutPassword } = newUser;
+    
+    console.log('User registered successfully:', userWithoutPassword);
+    
+    res.status(201).json({
+      success: true,
+      data: {
+        user: userWithoutPassword,
+        token: 'test-jwt-token-' + newUser.id
+      }
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    console.log('Login attempt:', { email });
+    
+    // Find user
+    const user = users.find(u => u.email === email && u.password === password);
+    
+    if (!user) {
+      console.log('Login failed: Invalid credentials');
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Return success (without password)
+    const { password: _, ...userWithoutPassword } = user;
+    
+    console.log('Login successful:', userWithoutPassword);
+    
+    res.json({
+      success: true,
+      data: {
+        user: userWithoutPassword,
+        token: 'test-jwt-token-' + user.id
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/auth/profile', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const user = users[0];
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  
+  const { password: _, ...userWithoutPassword } = user;
+  res.json({ success: true, data: userWithoutPassword });
+});
+
+// ============ ITEM ROUTES ============
+app.get('/api/items', (req, res) => {
+  res.json({
+    success: true,
+    data: items,
+    pagination: { page: 1, limit: 12, total: items.length, totalPages: 1 }
+  });
+});
+
+app.post('/api/items', (req, res) => {
+  try {
+    const { title, description, category, type, location, dateFoundOrLost } = req.body;
+    
+    const newItem = {
+      id: items.length + 1,
+      title,
+      description,
+      category,
+      type,
+      location,
+      dateFoundOrLost: dateFoundOrLost || new Date().toISOString().split('T')[0],
+      status: 'PENDING',
+      userId: 1,
+      createdAt: new Date(),
+      user: { id: 1, username: 'user1', fullName: 'Test User' }
+    };
+    
+    items.push(newItem);
+    
+    res.status(201).json({
+      success: true,
+      data: newItem
+    });
+  } catch (error) {
+    console.error('Create item error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/items/:id', (req, res) => {
+  const item = items.find(i => i.id === parseInt(req.params.id));
+  if (!item) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+  res.json({ success: true, data: item });
+});
+
+// ============ ADD SAMPLE DATA ============
+items.push(
+  {
+    id: 1,
+    title: 'Lost iPhone 13',
+    description: 'Black iPhone 13 with clear case, lost near the library',
+    category: 'ELECTRONICS',
+    type: 'LOST',
+    location: 'University Library',
+    dateFoundOrLost: '2024-01-15',
+    status: 'APPROVED',
+    createdAt: new Date(),
+    user: { id: 1, username: 'john_doe', fullName: 'John Doe' }
+  },
+  {
+    id: 2,
+    title: 'Found Wallet',
+    description: 'Brown leather wallet found in the cafeteria',
+    category: 'ACCESSORIES',
+    type: 'FOUND',
+    location: 'Main Cafeteria',
+    dateFoundOrLost: '2024-01-16',
+    status: 'APPROVED',
+    createdAt: new Date(),
+    user: { id: 2, username: 'jane_smith', fullName: 'Jane Smith' }
+  },
+  {
+    id: 3,
+    title: 'Lost Keys',
+    description: 'Set of keys with a red keychain',
+    category: 'KEYS',
+    type: 'LOST',
+    location: 'Student Center',
+    dateFoundOrLost: '2024-01-17',
+    status: 'PENDING',
+    createdAt: new Date(),
+    user: { id: 1, username: 'john_doe', fullName: 'John Doe' }
+  },
+  {
+    id: 4,
+    title: 'Found Backpack',
+    description: 'Blue Jansport backpack with books inside',
+    category: 'BAGS',
+    type: 'FOUND',
+    location: 'Gym',
+    dateFoundOrLost: '2024-01-18',
+    status: 'APPROVED',
+    createdAt: new Date(),
+    user: { id: 3, username: 'mike_wilson', fullName: 'Mike Wilson' }
+  }
+);
+
+// ============ START SERVER ============
+app.listen(PORT, () => {
+  console.log('');
+  console.log('='.repeat(50));
+  console.log(`🚀 Server running at: http://localhost:${PORT}`);
+  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`📍 Get items: http://localhost:${PORT}/api/items`);
+  console.log(`📍 Register: POST http://localhost:${PORT}/api/auth/register`);
+  console.log(`📍 Login: POST http://localhost:${PORT}/api/auth/login`);
+  console.log('='.repeat(50));
+  console.log('');
+});
